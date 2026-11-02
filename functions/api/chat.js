@@ -18,7 +18,7 @@ const CONFIG = {
   // Default provider: Groq (free tier, ~560 tok/s → sub-second answers).
   // Swap model to "llama-3.3-70b-versatile" for richer answers (lower daily quota).
   provider: "groq",
-  groqModel: "llama-3.1-8b-instant",
+  groqModel: "llama-3.3-70b-versatile",
   geminiModel: "gemini-2.5-flash",
   maxTokens: 220,     // keeps answers to ~2–3 spoken sentences
   temperature: 0.3,   // low = sticks to the CV, less invention
@@ -123,6 +123,17 @@ export async function onRequestPost({ request, env }) {
     const messages = Array.isArray(body.messages) ? body.messages.slice(-8) : [];
     if (!messages.length) {
       return new Response(JSON.stringify({ error: "no messages" }), { status: 400, headers: cors });
+    }
+
+    // One-off diagnostic: ask "__models__" to list the Groq models this key can use.
+    // Safe to leave in (lists model ids only, no secret); remove if you like.
+    if (messages[messages.length - 1].content === "__models__") {
+      const mr = await fetch("https://api.groq.com/openai/v1/models", {
+        headers: { Authorization: `Bearer ${env.GROQ_API_KEY}` },
+      });
+      const mj = await mr.json();
+      const ids = (mj.data || []).map((m) => m.id).sort();
+      return new Response(JSON.stringify({ reply: ids.join(", ") || JSON.stringify(mj) }), { headers: cors });
     }
 
     const cv = await loadCV(request);
