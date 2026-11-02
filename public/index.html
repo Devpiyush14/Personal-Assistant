@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Piyush Kaushik — CV Assistant</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #121a30;
+    --panel-2: #0e1528;
+    --ink: #eaf0ff;
+    --muted: #93a0c2;
+    --accent: #5b8cff;
+    --accent-2: #37d6b0;
+    --user: #1d2a4d;
+    --bot: #16203a;
+    --ring: rgba(91,140,255,.35);
+    --radius: 16px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--font);
+    background: radial-gradient(1200px 600px at 70% -10%, #1a2b55 0, transparent 60%), var(--bg);
+    color: var(--ink);
+    display: flex; justify-content: center;
+  }
+  .app {
+    width: 100%; max-width: 760px;
+    display: flex; flex-direction: column;
+    height: 100dvh; padding: 0 16px;
+  }
+  header {
+    padding: 20px 4px 14px; border-bottom: 1px solid #1d2742;
+  }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+  header p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent-2); margin-right:6px; vertical-align:middle; }
+
+  #chat {
+    flex: 1; overflow-y: auto; padding: 18px 2px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .msg { max-width: 82%; padding: 11px 14px; border-radius: var(--radius); line-height: 1.45; font-size: 15px; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user { align-self: flex-end; background: var(--user); border-bottom-right-radius: 5px; }
+  .msg.bot  { align-self: flex-start; background: var(--bot); border: 1px solid #1f2b4a; border-bottom-left-radius: 5px; }
+  .msg.bot.thinking { color: var(--muted); font-style: italic; }
+
+  .composer {
+    display: flex; gap: 8px; align-items: flex-end;
+    padding: 12px 0 calc(14px + env(safe-area-inset-bottom));
+    border-top: 1px solid #1d2742;
+  }
+  textarea {
+    flex: 1; resize: none; min-height: 46px; max-height: 120px;
+    background: var(--panel); color: var(--ink);
+    border: 1px solid #27345a; border-radius: 12px; padding: 12px 14px; font: inherit; font-size: 15px;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+  button.icon {
+    width: 46px; height: 46px; border-radius: 12px; border: 1px solid #27345a;
+    background: var(--panel); color: var(--ink); font-size: 18px; cursor: pointer; flex: 0 0 auto;
+    display: grid; place-items: center; transition: transform .06s ease, background .15s ease, border-color .15s;
+  }
+  button.icon:hover { border-color: var(--accent); }
+  button.icon:active { transform: scale(.94); }
+  button.send { background: var(--accent); border-color: var(--accent); }
+  button.mic.listening { background: #ff5577; border-color: #ff5577; animation: pulse 1.1s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(255,85,119,.5)} 70%{box-shadow:0 0 0 12px rgba(255,85,119,0)} 100%{box-shadow:0 0 0 0 rgba(255,85,119,0)} }
+
+  .bar { display:flex; align-items:center; gap:14px; padding: 6px 2px 2px; font-size:12px; color:var(--muted); }
+  .bar label { display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; padding: 4px 2px 10px; }
+  .chip { font-size:12.5px; color:var(--muted); background:var(--panel-2); border:1px solid #223055; padding:7px 11px; border-radius:999px; cursor:pointer; }
+  .chip:hover { color:var(--ink); border-color:var(--accent); }
+  .hint { font-size: 11.5px; color: #6b789c; padding: 0 2px 8px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Piyush Kaushik — CV Assistant</h1>
+    <p><span class="dot"></span>Ask about his product experience by voice or text</p>
+  </header>
+
+  <div id="chat" aria-live="polite"></div>
+
+  <div class="chips" id="chips">
+    <span class="chip">What does Piyush do at Tanla?</span>
+    <span class="chip">Tell me about Voice Albert.</span>
+    <span class="chip">What's his experience with AI/ML?</span>
+    <span class="chip">Walk me through his career.</span>
+  </div>
+
+  <div class="composer">
+    <textarea id="input" placeholder="Type a question, or tap the mic to speak…" rows="1"></textarea>
+    <button class="icon mic" id="mic" title="Speak" aria-label="Speak">🎤</button>
+    <button class="icon send" id="send" title="Send" aria-label="Send">➤</button>
+  </div>
+  <div class="bar">
+    <label><input type="checkbox" id="speak" checked /> Speak answers aloud</label>
+  </div>
+  <div class="hint" id="voicehint"></div>
+</div>
+
+<script>
+const API = "/api/chat";
+const chatEl = document.getElementById("chat");
+const inputEl = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+const micBtn = document.getElementById("mic");
+const speakEl = document.getElementById("speak");
+const voiceHint = document.getElementById("voicehint");
+
+const history = [];           // [{role, content}]
+let busy = false;
+
+// ---------- UI helpers ----------
+function addMsg(text, who, opts = {}) {
+  const el = document.createElement("div");
+  el.className = "msg " + who + (opts.thinking ? " thinking" : "");
+  el.textContent = text;
+  chatEl.appendChild(el);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return el;
+}
+function autogrow() { inputEl.style.height = "auto"; inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px"; }
+inputEl.addEventListener("input", autogrow);
+
+// ---------- Text-to-speech (free, browser) ----------
+function speak(text) {
+  if (!speakEl.checked || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.03; u.pitch = 1;
+  const vs = window.speechSynthesis.getVoices();
+  const pref = vs.find(v => /en-IN/i.test(v.lang)) || vs.find(v => /en-GB/i.test(v.lang)) || vs.find(v => /^en/i.test(v.lang));
+  if (pref) u.voice = pref;
+  window.speechSynthesis.speak(u);
+}
+if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = () => {};
+
+// ---------- Send flow ----------
+async function send(text) {
+  text = (text || "").trim();
+  if (!text || busy) return;
+  busy = true;
+  inputEl.value = ""; autogrow();
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+  addMsg(text, "user");
+  history.push({ role: "user", content: text });
+  const thinking = addMsg("…", "bot", { thinking: true });
+
+  try {
+    const r = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: history }),
+    });
+    const data = await r.json();
+    const reply = data.reply || "Sorry, I couldn't answer that.";
+    thinking.classList.remove("thinking");
+    thinking.textContent = reply;
+    history.push({ role: "assistant", content: reply });
+    speak(reply);
+  } catch (e) {
+    thinking.classList.remove("thinking");
+    thinking.textContent = "Network error — please try again.";
+  } finally {
+    busy = false;
+  }
+}
+
+sendBtn.addEventListener("click", () => send(inputEl.value));
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(inputEl.value); }
+});
+document.getElementById("chips").addEventListener("click", (e) => {
+  if (e.target.classList.contains("chip")) send(e.target.textContent);
+});
+
+// ---------- Speech-to-text (free, browser; Chrome/Edge best) ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null, listening = false;
+if (SR) {
+  recog = new SR();
+  recog.lang = "en-IN";
+  recog.interimResults = true;
+  recog.continuous = false;
+  let finalText = "";
+  recog.onresult = (ev) => {
+    let interim = "";
+    finalText = "";
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const t = ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) finalText += t; else interim += t;
+    }
+    inputEl.value = (finalText || interim); autogrow();
+  };
+  recog.onend = () => {
+    listening = false; micBtn.classList.remove("listening");
+    const t = inputEl.value.trim();
+    if (t) send(t);
+  };
+  recog.onerror = () => { listening = false; micBtn.classList.remove("listening"); };
+  micBtn.addEventListener("click", () => {
+    if (busy) return;
+    if (listening) { recog.stop(); return; }
+    try {
+      inputEl.value = "";
+      recog.start(); listening = true; micBtn.classList.add("listening");
+    } catch (_) {}
+  });
+} else {
+  micBtn.disabled = true;
+  micBtn.style.opacity = .4;
+  voiceHint.textContent = "Voice input isn't supported in this browser — use the text box, or open in Chrome.";
+}
+
+// ---------- Greeting ----------
+addMsg("Hi — I'm Piyush Kaushik's CV assistant. Ask me anything about his product experience, the AI products he's built, or his career history. What would you like to know?", "bot");
+</script>
+</body>
+</html>
