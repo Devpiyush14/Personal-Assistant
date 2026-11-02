@@ -23,10 +23,12 @@ Browser (index.html)                 Cloudflare Pages Function (/api/chat)
 - **Voice in/out:** browser Web Speech API — free, client-side, near-zero latency.
   Best on Chrome/Edge. Safari/iOS speech-recognition is partial, so the text box is
   always available as the guaranteed path.
-- **LLM:** Groq free tier (`llama-3.1-8b-instant`, ~560 tok/s) → first words in well
-  under a second. Gemini `gemini-2.5-flash` wired as an automatic fallback.
+- **LLM:** Groq free tier (`openai/gpt-oss-20b`) → first words in well under a second.
+  Gemini `gemini-2.5-flash` wired as an automatic fallback. (Groq rotates its model
+  roster; which models a given key can use varies — check the `__models__`-style list
+  or console.groq.com/docs/models if you get a `model_not_found` 404.)
 - **Cost:** $0. No credit card needed for Groq's free tier. A CV bot gets a handful
-  of visitors a day — nowhere near the free limits (~14,400 requests/day on Groq 8B).
+  of visitors a day — nowhere near the free limits.
 
 ## The backend folder you keep updating
 
@@ -84,7 +86,7 @@ domain). That's the link you put in your CV.
 
 ## Switching model / provider
 In `functions/api/chat.js`, `CONFIG` block:
-- Richer answers, lower quota: `groqModel: "llama-3.3-70b-versatile"`.
+- Richer answers, lower quota: `groqModel: "openai/gpt-oss-120b"`.
 - Prefer Gemini: set env var `PROVIDER=gemini` (needs `GEMINI_API_KEY`).
 
 ## Local test (optional)
