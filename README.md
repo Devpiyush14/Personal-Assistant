@@ -95,6 +95,36 @@ npm i -g wrangler
 wrangler pages dev public   # set GROQ_API_KEY in your shell first
 ```
 
+## Analytics & visitor logging (free)
+
+Two layers, both $0:
+
+**1. Traffic — Cloudflare Web Analytics.** Enable it in the dashboard (Pages project →
+Web Analytics, or Analytics & Logs → Web Analytics → add `voice-cv.pages.dev`). Privacy-
+first, cookieless, auto-injected — no code change. Gives visits, visitors, referrers,
+countries, top pages.
+
+**2. Question logging — D1 + `/stats`.** Each page load hits `POST /api/visit` and each
+question hits `POST /api/chat`, both writing a row to a D1 database bound as `DB`.
+
+Setup (one-time, dashboard):
+1. **Create D1:** Workers & Pages → D1 → Create → name it (e.g. `voice-cv-logs`).
+2. **Schema:** open the DB → Console → paste `schema.sql` → run.
+3. **Bind it:** Pages project → Settings → Bindings → add **D1** binding, variable name
+   `DB`, pointing at that database.
+4. **Password:** Settings → Variables and secrets → add Secret `STATS_PASSWORD` = a password
+   you choose.
+5. Redeploy (push any commit, or Retry deployment).
+
+View at **`/stats`** (e.g. `https://voice-cv.pages.dev/stats`) — enter the password. Shows
+total/unique visits, questions asked, questions-per-session, engagement rate, top questions,
+visits by day, by country, and recent questions.
+
+Privacy: no raw IP is stored — only CF's coarse country code, a per-tab session id, timestamp,
+and the question text (truncated to 500 chars). Logging is best-effort and never blocks or
+breaks a reply. Questions are what HR types about your experience; don't treat the log as
+confidential given the repo/site are public.
+
 ## Notes
 - Free LLM tiers may use inputs for training. Not a concern here — the CV is
   public-facing by design. Do not add anything private to `public/cv/`.

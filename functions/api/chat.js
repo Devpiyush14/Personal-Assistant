@@ -102,7 +102,8 @@ async function callGemini(env, system, messages) {
   return (j.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(context) {
+  const { request, env } = context;
   const cors = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -145,6 +146,19 @@ export async function onRequestPost({ request, env }) {
         throw primaryErr;
       }
     }
+
+    // Best-effort question logging to D1 (never blocks or breaks the reply).
+    try {
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      if (env.DB && lastUser) {
+        const session = typeof body.session === "string" ? body.session.slice(0, 64) : "";
+        const country = request.headers.get("CF-IPCountry") || "??";
+        const stmt = env.DB
+          .prepare("INSERT INTO questions (ts, session, country, q) VALUES (?, ?, ?, ?)")
+          .bind(new Date().toISOString(), session, country, String(lastUser.content).slice(0, 500));
+        context.waitUntil(stmt.run().catch(() => {}));
+      }
+    } catch (_) { /* logging must never affect the response */ }
 
     return new Response(JSON.stringify({ reply }), { headers: cors });
   } catch (err) {
