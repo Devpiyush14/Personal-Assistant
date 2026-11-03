@@ -97,6 +97,7 @@
     align-self: flex-start; background: var(--surface); color: var(--ink);
     border: 1px solid var(--line); border-bottom-left-radius: 5px;
   }
+  .msg.bot strong { font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
   .dots { display: inline-flex; gap: 4px; padding: 2px 0; }
   .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); display: inline-block; animation: blink 1.2s infinite ease-in-out; }
   .dots i:nth-child(2) { animation-delay: 0.2s; }
@@ -246,6 +247,14 @@ function addMsg(text, who, opts = {}) {
   chatEl.scrollTop = chatEl.scrollHeight;
   return el;
 }
+// Render the model's light markdown (**bold**) as clean HTML; strip stray markers.
+function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+function formatReply(s) {
+  return escapeHtml(s)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/(?:^|\n)\s*[-*]\s+/g, "\n• ")
+    .replace(/\*/g, "");
+}
 function autogrow() { inputEl.style.height = "auto"; inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px"; }
 inputEl.addEventListener("input", autogrow);
 
@@ -282,9 +291,9 @@ async function send(text) {
     });
     const data = await r.json();
     const reply = data.reply || "Sorry, I couldn't answer that.";
-    thinking.textContent = reply;
+    thinking.innerHTML = formatReply(reply);
     history.push({ role: "assistant", content: reply });
-    speak(reply);
+    speak(reply.replace(/\*+/g, ""));
   } catch (e) {
     thinking.textContent = "Network error — please try again.";
   } finally {
