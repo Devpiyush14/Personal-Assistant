@@ -22,6 +22,7 @@ const CONFIG = {
   // (lower daily quota, but fine for CV-bot traffic).
   provider: "groq",
   groqModel: "openai/gpt-oss-120b",
+  groqFallbackModel: "openai/gpt-oss-20b", // used if the primary model errors/rate-limits
   geminiModel: "gemini-2.5-flash",
   maxTokens: 400,     // room for complete, metric-rich answers (220 truncated them)
   temperature: 0.3,   // low = sticks to the CV, less invention
@@ -61,7 +62,7 @@ function buildSystemPrompt(cv) {
   );
 }
 
-async function callGroq(env, system, messages) {
+async function callGroq(env, system, messages, model = CONFIG.groqModel) {
   const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -69,7 +70,7 @@ async function callGroq(env, system, messages) {
       Authorization: `Bearer ${env.GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      model: CONFIG.groqModel,
+      model,
       temperature: CONFIG.temperature,
       max_tokens: CONFIG.maxTokens,
       messages: [{ role: "system", content: system }, ...messages],
@@ -139,11 +140,14 @@ export async function onRequestPost(context) {
         ? await callGemini(env, system, messages)
         : await callGroq(env, system, messages);
     } catch (primaryErr) {
-      // Fallback to the other provider if its key is configured.
+      // Degrade gracefully rather than erroring out.
       if (provider !== "gemini" && env.GEMINI_API_KEY) {
         reply = await callGemini(env, system, messages);
       } else if (provider === "gemini" && env.GROQ_API_KEY) {
         reply = await callGroq(env, system, messages);
+      } else if (provider !== "gemini") {
+        // Primary Groq model (e.g. 120b) failed/rate-limited → retry on the lighter model.
+        reply = await callGroq(env, system, messages, CONFIG.groqFallbackModel);
       } else {
         throw primaryErr;
       }
