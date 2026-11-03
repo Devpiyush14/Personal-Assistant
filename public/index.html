@@ -142,13 +142,26 @@
   button.send:hover { background: #7f2a0e; border-color: #7f2a0e; color: var(--accent-ink); }
   button.mic.listening { border-color: var(--accent); color: var(--accent); }
   button.mic.listening svg { display: none; }
-  .wave { display: none; gap: 2px; align-items: center; height: 16px; }
+  .wave { display: none; gap: 2.5px; align-items: center; height: 16px; }
+  button.mic.listening svg, button.mic.working svg { display: none; }
   button.mic.listening .wave { display: inline-flex; }
-  .wave i { width: 2.5px; height: 6px; border-radius: 2px; background: var(--accent); animation: eq 0.9s infinite ease-in-out; }
+  .wave i {
+    width: 3px; height: 16px; border-radius: 2px; background: var(--accent);
+    transform: scaleY(0.3); transform-origin: center bottom;
+    animation: eq 0.9s infinite ease-in-out;
+  }
   .wave i:nth-child(2) { animation-delay: 0.15s; }
   .wave i:nth-child(3) { animation-delay: 0.3s; }
   .wave i:nth-child(4) { animation-delay: 0.45s; }
-  @keyframes eq { 0%, 100% { height: 5px; } 50% { height: 15px; } }
+  @keyframes eq { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+  button.mic.working .spin { display: inline-block; width: 15px; height: 15px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  .spin { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .wave i { animation: none; transform: scaleY(0.7); }
+    .dots i, .spin { animation-duration: 0.01ms; }
+    .msg { animation: none; }
+  }
 
   .bar { display: flex; align-items: center; gap: 10px; padding: 10px 2px 6px; }
   .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
@@ -199,6 +212,7 @@
       <button class="icon mic" id="mic" title="Speak" aria-label="Speak">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
         <span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span class="spin" aria-hidden="true"></span>
       </button>
       <button class="icon send" id="send" title="Send" aria-label="Send">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
@@ -309,42 +323,87 @@ document.getElementById("chips").addEventListener("click", (e) => {
   if (e.target.classList.contains("chip")) send(e.target.textContent);
 });
 
-// ---------- Speech-to-text (free, browser; Chrome/Edge best) ----------
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recog = null, listening = false;
-if (SR) {
-  recog = new SR();
-  recog.lang = "en-IN";
-  recog.interimResults = true;
-  recog.continuous = false;
-  let finalText = "";
-  recog.onresult = (ev) => {
-    let interim = "";
-    finalText = "";
-    for (let i = ev.resultIndex; i < ev.results.length; i++) {
-      const t = ev.results[i][0].transcript;
-      if (ev.results[i].isFinal) finalText += t; else interim += t;
-    }
-    inputEl.value = (finalText || interim); autogrow();
-  };
-  recog.onend = () => {
-    listening = false; micBtn.classList.remove("listening");
-    const t = inputEl.value.trim();
-    if (t) send(t);
-  };
-  recog.onerror = () => { listening = false; micBtn.classList.remove("listening"); };
+// ---------- Voice input (record → Groq Whisper; works on all browsers) ----------
+// Web Speech API is unreliable on iOS (every iOS browser is WebKit), so instead we
+// record a short clip with MediaRecorder and transcribe it server-side.
+const canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+let mediaRecorder = null, chunks = [], recording = false, micStream = null, recMime = "";
+
+function pickMime() {
+  const cands = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac", "audio/ogg"];
+  if (window.MediaRecorder && MediaRecorder.isTypeSupported) {
+    for (const c of cands) { if (MediaRecorder.isTypeSupported(c)) return c; }
+  }
+  return "";
+}
+
+async function startRec() {
+  if (recording || busy) return;
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    voiceHint.textContent = "Microphone blocked — allow mic access in your browser, or just type.";
+    return;
+  }
+  voiceHint.textContent = "";
+  chunks = [];
+  recMime = pickMime();
+  try { mediaRecorder = recMime ? new MediaRecorder(micStream, { mimeType: recMime }) : new MediaRecorder(micStream); }
+  catch (_) { try { mediaRecorder = new MediaRecorder(micStream); } catch (e) { voiceHint.textContent = "Recording isn't supported here — please type."; stopStream(); return; } }
+
+  mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  mediaRecorder.onstop = onRecStop;
+  mediaRecorder.start();
+  recording = true;
+  micBtn.classList.add("listening");
+  micBtn.setAttribute("aria-label", "Stop recording");
+  // Safety cap so a clip never runs away (and stays small/fast to transcribe).
+  recTimer = setTimeout(() => { if (recording) stopRec(); }, 30000);
+}
+
+function stopStream() { if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; } }
+let recTimer = null;
+function stopRec() {
+  if (recTimer) { clearTimeout(recTimer); recTimer = null; }
+  if (mediaRecorder && recording) { try { mediaRecorder.stop(); } catch (_) {} }
+}
+
+async function onRecStop() {
+  recording = false;
+  micBtn.classList.remove("listening");
+  micBtn.setAttribute("aria-label", "Speak");
+  stopStream();
+  const type = (mediaRecorder && mediaRecorder.mimeType) || recMime || "audio/webm";
+  const blob = new Blob(chunks, { type });
+  if (!blob.size) return;
+
+  micBtn.classList.add("working");
+  voiceHint.textContent = "Transcribing…";
+  const ext = type.includes("mp4") || type.includes("aac") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
+  const fd = new FormData();
+  fd.append("audio", blob, "clip." + ext);
+  try {
+    const r = await fetch("/api/transcribe", { method: "POST", body: fd });
+    const j = await r.json();
+    micBtn.classList.remove("working");
+    const text = (j.text || "").trim();
+    if (text) { voiceHint.textContent = ""; send(text); }
+    else { voiceHint.textContent = "Didn't catch that — try again, or type your question."; }
+  } catch (e) {
+    micBtn.classList.remove("working");
+    voiceHint.textContent = "Voice failed — please type your question.";
+  }
+}
+
+if (canRecord) {
   micBtn.addEventListener("click", () => {
-    if (busy) return;
-    if (listening) { recog.stop(); return; }
-    try {
-      inputEl.value = "";
-      recog.start(); listening = true; micBtn.classList.add("listening");
-    } catch (_) {}
+    if (micBtn.classList.contains("working")) return;
+    if (recording) stopRec(); else startRec();
   });
 } else {
   micBtn.disabled = true;
   micBtn.style.opacity = .4;
-  voiceHint.textContent = "Voice input isn't supported in this browser — use the text box, or open in Chrome.";
+  voiceHint.textContent = "Voice input isn't available in this browser — use the text box.";
 }
 
 // ---------- Greeting ----------
