@@ -12,16 +12,18 @@ const CV_FILES = [
   "/cv/03-skills.md",
   "/cv/04-projects.md",
   "/cv/05-faq.md",
+  "/cv/06-highlights.md",
 ];
 
 const CONFIG = {
   // Default provider: Groq (free tier, fast → sub-second answers).
   // This key's available chat models: openai/gpt-oss-20b, openai/gpt-oss-120b,
-  // qwen/qwen3.8-27b, allam-2-7b. Swap to gpt-oss-120b for richer answers (lower quota).
+  // qwen/qwen3.8-27b, allam-2-7b. 120b gives richer, more polished answers
+  // (lower daily quota, but fine for CV-bot traffic).
   provider: "groq",
-  groqModel: "openai/gpt-oss-20b",
+  groqModel: "openai/gpt-oss-120b",
   geminiModel: "gemini-2.5-flash",
-  maxTokens: 220,     // keeps answers to ~2–3 spoken sentences
+  maxTokens: 400,     // room for complete, metric-rich answers (220 truncated them)
   temperature: 0.3,   // low = sticks to the CV, less invention
 };
 
