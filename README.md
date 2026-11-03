@@ -1,4 +1,4 @@
-# Piyush Kaushik — CV Voice Assistant
+# Piyush Kaushik — Executive Assistant
 
 A zero-cost, cloud-hosted voice assistant that answers questions about Piyush's
 professional experience, **strictly** from his Master CV. Embed the link in a CV
