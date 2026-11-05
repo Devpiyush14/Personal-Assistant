@@ -24,7 +24,7 @@ const CONFIG = {
   groqModel: "openai/gpt-oss-120b",
   groqFallbackModel: "openai/gpt-oss-20b", // used if the primary model errors/rate-limits
   geminiModel: "gemini-2.5-flash",
-  maxTokens: 400,     // room for complete, metric-rich answers (220 truncated them)
+  maxTokens: 500,     // room for a lead line plus a short bullet list
   temperature: 0.3,   // low = sticks to the CV, less invention
 };
 

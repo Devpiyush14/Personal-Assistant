@@ -107,6 +107,12 @@
     border: 1px solid var(--line); border-bottom-left-radius: 5px;
   }
   .msg.bot strong { font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .msg.bot p { margin: 0 0 9px; }
+  .msg.bot p:last-child { margin-bottom: 0; }
+  .msg.bot ul { margin: 8px 0 2px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; }
+  .msg.bot ul:last-child { margin-bottom: 0; }
+  .msg.bot li { position: relative; padding-left: 17px; line-height: 1.5; }
+  .msg.bot li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
   .dots { display: inline-flex; gap: 4px; padding: 2px 0; }
   .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); display: inline-block; animation: blink 1.2s infinite ease-in-out; }
   .dots i:nth-child(2) { animation-delay: 0.2s; }
@@ -280,13 +286,32 @@ function addMsg(text, who, opts = {}) {
   chatEl.scrollTop = chatEl.scrollHeight;
   return el;
 }
-// Render the model's light markdown (**bold**) as clean HTML; strip stray markers.
+// Render the model's light markdown (lead sentence, bullet lists, **bold**) as clean HTML.
 function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
-function formatReply(s) {
+function inlineMd(s) {
   return escapeHtml(s)
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/(?:^|\n)\s*[-*]\s+/g, "\n• ")
+    .replace(/`([^`]+)`/g, "$1")
     .replace(/\*/g, "");
+}
+function formatReply(s) {
+  const lines = String(s).replace(/\r/g, "").split("\n");
+  let html = "", list = null, para = [];
+  const flushPara = () => { if (para.length) { html += "<p>" + inlineMd(para.join(" ")) + "</p>"; para = []; } };
+  const flushList = () => { if (list) { html += "<ul>" + list + "</ul>"; list = null; } };
+  for (const raw of lines) {
+    const line = raw.trim();
+    const m = line.match(/^(?:[-*•]|\d+[.)])\s+(.*)/);
+    if (m) { flushPara(); list = (list || "") + "<li>" + inlineMd(m[1]) + "</li>"; }
+    else if (line === "") { flushPara(); flushList(); }
+    else { flushList(); para.push(line); }
+  }
+  flushPara(); flushList();
+  return html || inlineMd(s);
+}
+// Plain text for speech (strip bullet markers and emphasis).
+function toPlain(s) {
+  return String(s).replace(/\*+/g, "").replace(/`/g, "").replace(/^\s*[-*•]\s+/gm, "").replace(/\n{2,}/g, ". ");
 }
 function autogrow() { inputEl.style.height = "auto"; inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px"; }
 inputEl.addEventListener("input", autogrow);
@@ -326,7 +351,7 @@ async function send(text) {
     const reply = data.reply || "Sorry, I couldn't answer that.";
     thinking.innerHTML = formatReply(reply);
     history.push({ role: "assistant", content: reply });
-    speak(reply.replace(/\*+/g, ""));
+    speak(toPlain(reply));
   } catch (e) {
     thinking.textContent = "Network error — please try again.";
   } finally {
