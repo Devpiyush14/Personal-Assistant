@@ -113,6 +113,8 @@
   .msg.bot ul:last-child { margin-bottom: 0; }
   .msg.bot li { position: relative; padding-left: 17px; line-height: 1.5; }
   .msg.bot li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  .msg.bot a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 2px; transition: color 0.15s, text-decoration-color 0.15s; }
+  .msg.bot a:hover { color: var(--accent); text-decoration-color: var(--accent); }
   .dots { display: inline-flex; gap: 4px; padding: 2px 0; }
   .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); display: inline-block; animation: blink 1.2s infinite ease-in-out; }
   .dots i:nth-child(2) { animation-delay: 0.2s; }
@@ -288,11 +290,31 @@ function addMsg(text, who, opts = {}) {
 }
 // Render the model's light markdown (lead sentence, bullet lists, **bold**) as clean HTML.
 function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+// Organization websites — linked automatically wherever a name appears in a reply.
+const ORG_LINKS = {
+  "Tanla Platforms": "https://www.tanla.com/",
+  "Tanla": "https://www.tanla.com/",
+  "Zigly": "https://zigly.com/",
+  "Petsy": "https://zigly.com/",
+  "Affle": "https://affle.com/",
+  "Unicommerce": "https://unicommerce.com/",
+  "Adobe": "https://www.adobe.com/de",
+  "Accenture": "https://www.accenture.com/en",
+};
+// Longest names first so "Tanla Platforms" matches before "Tanla".
+const ORG_RE = /\b(Tanla Platforms|Tanla|Unicommerce|Accenture|Zigly|Petsy|Affle|Adobe)\b/g;
+function linkifyOrgs(html) {
+  return html.replace(ORG_RE, (m) => {
+    const url = ORG_LINKS[m];
+    return url ? '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + m + "</a>" : m;
+  });
+}
 function inlineMd(s) {
-  return escapeHtml(s)
+  const t = escapeHtml(s)
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\*/g, "");
+  return linkifyOrgs(t);
 }
 function formatReply(s) {
   const lines = String(s).replace(/\r/g, "").split("\n");
